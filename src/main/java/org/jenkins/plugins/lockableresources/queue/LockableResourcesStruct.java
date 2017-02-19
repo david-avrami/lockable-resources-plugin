@@ -74,6 +74,28 @@ public class LockableResourcesStruct implements Serializable {
 			this.requiredNumber = String.valueOf(quantity);
 		}
 	}
+	
+	public LockableResourcesStruct(@Nullable List<String> resources, @Nullable String label, @Nullable String quantity) {
+		required = new ArrayList<LockableResource>();
+		if (resources != null) {
+			for (String resource : resources) {
+				LockableResource r = LockableResourcesManager.get().fromName(resource);
+				if (r != null) {
+					this.required.add(r);
+				}
+			}
+		}
+		
+		this.label = label;
+		if (this.label == null) {
+			this.label = "";
+		}
+		
+		this.requiredNumber = quantity;
+		if (requiredNumber == null || requiredNumber.isEmpty()) {
+			this.requiredNumber = "0";
+		}
+	}
 
 	public String toString() {
 		return "Required resources: " + this.required +

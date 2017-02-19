@@ -8,33 +8,30 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 package org.jenkins.plugins.lockableresources;
 
-import edu.umd.cs.findbugs.annotations.CheckForNull;
-import hudson.Extension;
-import hudson.model.AbstractBuild;
-import hudson.model.Run;
-
 import java.io.PrintStream;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import jenkins.model.GlobalConfiguration;
-import jenkins.model.Jenkins;
-import net.sf.json.JSONException;
-import net.sf.json.JSONObject;
 
 import org.jenkins.plugins.lockableresources.queue.LockableResourcesStruct;
 import org.jenkins.plugins.lockableresources.queue.QueuedContextStruct;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.kohsuke.stapler.StaplerRequest;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.Nullable;
+import hudson.Extension;
+import hudson.model.Run;
+import jenkins.model.GlobalConfiguration;
+import jenkins.model.Jenkins;
+import net.sf.json.JSONException;
+import net.sf.json.JSONObject;
 
 @Extension
 public class LockableResourcesManager extends GlobalConfiguration {
@@ -113,12 +110,18 @@ public class LockableResourcesManager extends GlobalConfiguration {
 		return free;
 	}
 
-	public List<LockableResource> getResourcesWithLabel(String label,
+	public List<LockableResource> getResourcesWithLabel(ArrayList<String> labels,
 			Map<String, Object> params) {
 		List<LockableResource> found = new ArrayList<LockableResource>();
 		for (LockableResource r : this.resources) {
-			if (r.isValidLabel(label, params))
-				found.add(r);
+			for (String label : labels) {
+//				String label = labels.get(i);
+//				String amount = numbersForLabels.get(i);
+//				for(int j=0 ; j < Integer.parseInt(amount) ; j++) {
+					if (r.isValidLabel(label, params))
+						found.add(r);
+//				}
+			}
 		}
 		return found;
 	}
@@ -132,7 +135,7 @@ public class LockableResourcesManager extends GlobalConfiguration {
 		}
 		return null;
 	}
-
+	
 	public synchronized boolean queue(List<LockableResource> resources,
 			long queueItemId) {
 		for (LockableResource r : resources)
@@ -150,32 +153,74 @@ public class LockableResourcesManager extends GlobalConfiguration {
 	                                                 Map<String, Object> params,
 	                                                 Logger log) {
 		List<LockableResource> selected = new ArrayList<LockableResource>();
+		System.out.println("selected before1:" + selected);
 
+		System.out.println("Queueing");
+		System.out.println(queueItemId + " " + queueItemProject + " " + number + " " + requiredResources + " " + params);
 		if (!checkCurrentResourcesStatus(selected, queueItemProject, queueItemId, log)) {
 			// The project has another buildable item waiting -> bail out
 			log.log(Level.FINEST, "{0} has another build waiting resources." +
 			        " Waiting for it to proceed first.",
 			        new Object[]{queueItemProject});
+			System.out.println("Returning null in begining");
 			return null;
 		}
+		System.out.println("selected before2:" + selected);
 
 		List<LockableResource> candidates = new ArrayList<LockableResource>();
-		if (requiredResources.label != null && requiredResources.label.isEmpty()) {
+		ArrayList<String> labels = new ArrayList<String>(Arrays.asList(requiredResources.label.split("\\s+")));
+		ArrayList<String> numbersForLabels = new ArrayList<String>(Arrays.asList(requiredResources.requiredNumber.split("\\s+")));
+		if (labels != null && labels.isEmpty()) {
 			candidates = requiredResources.required;
 		} else {
-			candidates = getResourcesWithLabel(requiredResources.label, params);
+			candidates = getResourcesWithLabel(labels, params);
 		}
-
-		for (LockableResource rs : candidates) {
-			if (number != 0 && (selected.size() >= number))
-				break;
-			if (!rs.isReserved() && !rs.isLocked() && !rs.isQueued())
-				selected.add(rs);
+		
+		// this method runs until it actually runs - minimum 2 times - selected is modified in the 'checkCurrentResourcesStatus' method 
+		// should retain selected and address it as it already contains the resource needed for the run  
+		
+		int sumOfNeededRes = 0; 
+		for (int i = 0; i < labels.size(); i++) {
+			// search for resources by number of needed
+			String reqlabel = labels.get(i);
+			Integer reqNum = Integer.parseInt(numbersForLabels.get(i));
+			sumOfNeededRes += reqNum;
+			
+			for (LockableResource sel : selected) {
+				if (sel.getLabels().contains(reqlabel))
+					reqNum--;
+			}
+			
+			for (int j=0 ; j < reqNum ; j++) {
+				for (LockableResource rs : candidates) {
+					if (!selected.contains(rs) && rs.getLabels().contains(reqlabel) && !rs.isReserved() && !rs.isLocked() && !rs.isQueued()) {
+						selected.add(rs);
+						System.out.println("added:" + rs);
+						break;
+					}
+				}
+			}
+		}
+		System.out.println("current selected:" + selected);
+		
+		if (sumOfNeededRes == 0)
+			sumOfNeededRes = number;
+		
+		if (numbersForLabels.isEmpty()) {
+			System.out.println("in empty");
+			for (LockableResource rs : candidates) {
+				if (sumOfNeededRes != 0 && (selected.size() >= sumOfNeededRes))
+					break;
+				if (!rs.isReserved() && !rs.isLocked() && !rs.isQueued())
+					selected.add(rs);
+			}
 		}
 
 		// if did not get wanted amount or did not get all
-		int required_amount = number == 0 ? candidates.size() : number;
-
+		int required_amount = sumOfNeededRes == 0 ? candidates.size() : sumOfNeededRes;
+		System.out.println("candidates:" + candidates.size());
+		System.out.println("selected:" + selected.size());
+		System.out.println("required_amount:" + required_amount);
 		if (selected.size() != required_amount) {
 			log.log(Level.FINEST, "{0} found {1} resource(s) to queue." +
 			        "Waiting for correct amount: {2}.",
@@ -186,12 +231,14 @@ public class LockableResourcesManager extends GlobalConfiguration {
 				    x.getQueueItemProject().equals(queueItemProject))
 					x.unqueue();
 			}
+			System.out.println("returning null");
 			return null;
 		}
 
 		for (LockableResource rsc : selected) {
 			rsc.setQueued(queueItemId, queueItemProject);
 		}
+		System.out.println("Returning selected in end");
 		return selected;
 	}
 
@@ -207,12 +254,14 @@ public class LockableResourcesManager extends GlobalConfiguration {
 			if (rProject != null && rProject.equals(project)) {
 				if (r.isQueuedByTask(taskId)) {
 					// this item has queued the resource earlier
+					System.out.println("this item has queued the resource earlier");
 					selected.add(r);
 				} else {
 					// The project has another buildable item waiting -> bail out
 					log.log(Level.FINEST, "{0} has another build " +
 						"that already queued resource {1}. Continue queueing.",
 						new Object[]{project, r});
+					System.out.println("that already queued resource {1}. Continue queueing.");
 					return false;
 				}
 			}
@@ -489,25 +538,36 @@ public class LockableResourcesManager extends GlobalConfiguration {
 	public synchronized List<LockableResource> checkResourcesAvailability(LockableResourcesStruct requiredResources,
 			@Nullable PrintStream logger, @Nullable List<String> lockedResourcesAboutToBeUnlocked) {
 		// get possible resources
+		System.out.println("Availability check");
 		int requiredAmount = 0; // 0 means all
 		List<LockableResource> candidates = new ArrayList<LockableResource>();
-		if (requiredResources.label != null && requiredResources.label.isEmpty()) {
+		ArrayList<String> label = new ArrayList<String>(Arrays.asList(requiredResources.label.split("\\s+")));
+		ArrayList<String> numbersForLabels = new ArrayList<String>(Arrays.asList(requiredResources.requiredNumber.split("\\s+")));
+		if (label != null && label.isEmpty()) {
 			candidates = requiredResources.required;
 		} else {
-			candidates = getResourcesWithLabel(requiredResources.label, null);
+			candidates = getResourcesWithLabel(label, null);
 			if (requiredResources.requiredNumber != null) {
-				try {
-					requiredAmount = Integer.parseInt(requiredResources.requiredNumber);
-				} catch (NumberFormatException e) {
-					requiredAmount = 0;
+				int sumOfNeededRes = 0; 
+				for (String reqNum : numbersForLabels) {
+					sumOfNeededRes += Integer.parseInt(reqNum);
 				}
+				if (candidates.size() != sumOfNeededRes) {
+					logger.println("Not enough resources, need:" + candidates.size() + " but have only:" + sumOfNeededRes);
+					return null;
+				}
+//				try {
+//					requiredAmount = Integer.parseInt(requiredResources.requiredNumber);
+//				} catch (NumberFormatException e) {
+//					logger.println("incorrect amount: " + requiredAmount + ", Setting default value");
+//					requiredAmount = 0;
+//				}
 			}
 		}
 
 		if (requiredAmount == 0) {
 			requiredAmount = candidates.size();
 		}
-
 		// start with an empty set of selected resources
 		List<LockableResource> selected = new ArrayList<LockableResource>();
 

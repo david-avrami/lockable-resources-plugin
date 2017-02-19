@@ -17,6 +17,8 @@ import hudson.model.Queue;
 import hudson.model.queue.QueueTaskDispatcher;
 import hudson.model.queue.CauseOfBlockage;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,18 +49,28 @@ public class LockableResourcesQueueTaskDispatcher extends QueueTaskDispatcher {
 			(resources.required.isEmpty() && resources.label.isEmpty())) {
 			return null;
 		}
-
-		int resourceNumber;
-		try {
-			resourceNumber = Integer.parseInt(resources.requiredNumber);
-		} catch (NumberFormatException e) {
-			resourceNumber = 0;
+		
+//		int resourceNumber = 0; 
+//		try {
+//			resourceNumber = Integer.parseInt(resources.requiredNumber);
+//		} catch (NumberFormatException e) {
+//			LOGGER.finest(project.getName() + " Didn't get number of resources with message:" + e.getMessage());
+//			LOGGER.finest(project.getName() + " Setting number of resources to default value");
+//			resourceNumber = 0;
+//		}
+		
+		int sumOfNeededRes = 0; 
+		if (resources.requiredNumber != null && !resources.requiredNumber.isEmpty()) {
+			ArrayList<String> numbersForLabels = new ArrayList<String>(Arrays.asList(resources.requiredNumber.split("\\s+")));
+			for (String reqNum : numbersForLabels) {
+				sumOfNeededRes += Integer.parseInt(reqNum);
+			}
 		}
 
 		LOGGER.finest(project.getName() +
 			" trying to get resources with these details: " + resources);
 
-		if (resourceNumber > 0 || !resources.label.isEmpty()) {
+		if (sumOfNeededRes > 0 || !resources.label.isEmpty()) {
 			Map<String, Object> params = new HashMap<String, Object>();
 			if (item.task instanceof MatrixConfiguration) {
 			    MatrixConfiguration matrix = (MatrixConfiguration) item.task;
@@ -69,11 +81,12 @@ public class LockableResourcesQueueTaskDispatcher extends QueueTaskDispatcher {
 					resources,
 					item.getId(),
 					project.getFullName(),
-					resourceNumber,
+					sumOfNeededRes,
 					params,
 					LOGGER);
 
 			if (selected != null) {
+				System.out.println("Reserved:" + selected);
 				LOGGER.finest(project.getName() + " reserved resources " + selected);
 				return null;
 			} else {

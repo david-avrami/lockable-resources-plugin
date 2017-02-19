@@ -18,6 +18,7 @@ import hudson.model.Job;
 import hudson.util.FormValidation;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import net.sf.json.JSONObject;
@@ -151,12 +152,15 @@ public class RequiredResourcesProperty extends JobProperty<Job<?, ?>> {
 				return FormValidation.error(
 						"Only label or resources can be defined, not both.");
 			} else {
-				if (LockableResourcesManager.get().isValidLabel(label)) {
-					return FormValidation.ok();
-				} else {
-					return FormValidation.error(
-							"The label does not exist: " + label);
+				List<String> asList = Arrays.asList(label.split("\\s+"));
+				for (String labelFromList : asList) {
+					if (!LockableResourcesManager.get().isValidLabel(labelFromList)) {
+						return FormValidation.error(
+								"The label does not exist: " + labelFromList);
+					}
 				}
+
+				return FormValidation.ok();
 			}
 		}
 
@@ -166,32 +170,72 @@ public class RequiredResourcesProperty extends JobProperty<Job<?, ?>> {
 
 			String number = Util.fixEmptyAndTrim(value);
 			String names = Util.fixEmptyAndTrim(resourceNames);
-			String label = Util.fixEmptyAndTrim(labelName);
+			String labels = Util.fixEmptyAndTrim(labelName);
 
-			if (number == null || number.equals("") || number.trim().equals("0")) {
-				return FormValidation.ok();
-			}
 
-			int numAsInt;
-			try {
-				numAsInt = Integer.parseInt(number);
-			} catch(NumberFormatException e)  {
-				return FormValidation.error(
-					"Could not parse the given value as integer.");
-			}
-			int numResources = 0;
 			if (names != null) {
-				numResources = names.split("\\s+").length;
-			} else if (label != null) {
-				numResources = Integer.MAX_VALUE;
+				if (number != null && !number.isEmpty()) {
+					return FormValidation.error("Remove number when using 'Resources'");
+				}
+				
+				if (number == null || number.equals("") || number.trim().equals("0")) {
+					return FormValidation.ok();
+				}
+				
+				int numAsInt;
+				try {
+					numAsInt = Integer.parseInt(number);
+				} catch(NumberFormatException e)  {
+					return FormValidation.error("Could not parse the given value as integer.");
+				}
+				
+				int numResources = names.split("\\s+").length;
+
+				if (numResources < numAsInt) {
+					return FormValidation.error(String.format(
+							"Given amount %d is greater than amount of resources: %d.",
+							numAsInt,
+							numResources));
+				}
+			} else if (labels != null) {
+				int numLabels = labels.split("\\s+").length;
+				
+				if (number == null || number.isEmpty()) {
+					return FormValidation.error("Please fill the number values");
+				}
+				
+				List<String> numbersAsList = Arrays.asList(number.split("\\s+"));
+				if (numLabels != numbersAsList.size()) {
+					return FormValidation.error(String.format(
+							"Given amount of numbers %d is not equeal to the amount of labels: %d.",
+							numbersAsList.size(),
+							numLabels));
+				}
+				for (String num : numbersAsList) {
+					if (Integer.parseInt(num) <= 0)
+						return FormValidation.error("0 is not a valid resource number");
+				}
+				
+				ArrayList<String> removeMe = new ArrayList<String>(Arrays.asList(labels.split("\\s+")));
+				ArrayList<String> fromMe = new ArrayList<String>(Arrays.asList(labels.split("\\s+")));
+
+				for (String o1 : removeMe) {
+					fromMe.remove(o1);
+					if (fromMe.remove(o1))
+						return FormValidation.error("Use each lable only once");
+				}
+				
+				ArrayList<String> resLabels = new ArrayList<String>(Arrays.asList(labels.split("\\s+")));
+				ArrayList<String> arrOfNumbers = new ArrayList<String>(Arrays.asList(number.split("\\s+")));
+				for (int i = 0; i < resLabels.size(); i++) {
+					String l = resLabels.get(i);
+					Integer num = Integer.parseInt(arrOfNumbers.get(i));
+					int actualSizeOfRes = LockableResourcesManager.get().getResourcesWithLabel(new ArrayList<String>(Arrays.asList(l)), null).size();
+					if (actualSizeOfRes < num)
+						return FormValidation.error("There are only " + actualSizeOfRes + " resources with the label: " + l);
+				}
 			}
 
-			if (numResources < numAsInt) {
-				return FormValidation.error(String.format(
-					"Given amount %d is greater than amount of resources: %d.",
-					numAsInt,
-					numResources));
-			}
 			return FormValidation.ok();
 		}
 

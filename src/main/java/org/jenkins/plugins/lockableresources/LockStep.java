@@ -24,7 +24,7 @@ public class LockStep extends AbstractStepImpl implements Serializable {
 	@CheckForNull
 	public String label = null;
 
-	public int quantity = 0;
+	public String quantity = "0";
 
 	public boolean inversePrecedence = false;
 
@@ -50,7 +50,7 @@ public class LockStep extends AbstractStepImpl implements Serializable {
 	}
 
 	@DataBoundSetter
-	public void setQuantity(int quantity) {
+	public void setQuantity(String quantity) {
 		this.quantity = quantity;
 	}
 
@@ -100,7 +100,7 @@ public class LockStep extends AbstractStepImpl implements Serializable {
 	public String toString() {
 		// a label takes always priority
 		if (this.label != null) {
-			if (this.quantity > 0) {
+			if (this.quantity != null) {
 				return "Label: " + this.label + ", Quantity: " + this.quantity;
 			}
 			return "Label: " + this.label;
